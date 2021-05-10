@@ -1,0 +1,615 @@
+---
+title: "D19123726_Molly Kenny_TU059"
+output: html_notebook
+author: D19123726_Molly Kenny_TU059
+---
+
+### Abstract
+The aim of this study is to find correlation and differences which explain student success or failure to complete modules within the Portuguese secondary Education system.
+Five hypothesis will be investigated in order to provide clarity to the reasoning behind certain grades, focusing on Mathametics, due to a decreasing % of employment coming from Agriculture (2013: 10.23% compared to 2018: 6.34 ) and a higher portion going towards services (2013: 66.07% compared to 2018: 69.09% ) , a skilled labour force will be a vital part of Portugals current and future economy. (H. Plecher, June 2019)
+
+In this study, I have examined the Student Performance data set, which is sample data from two Portuguese public secondary schools within the Alentejo region, recorded in 1 academic year 2005-2006.
+Data is collected in 2 ways, one from School records (all grades and absences) and the rest of the data that will appear in this dataset was provided by the students in a voluntary questionaire.
+This data was pre-processed by Cortez.P & Silva.A, to remove columns in which there were a low turn out of answers, example parental income, and columns that were all answered yes, like computer in the home which would not have provided insight.
+
+
+
+##### Acceptable P-Value
+A p-value of 0.005 is the cut-off for all of the below testing. This is due to the nature of this data being highly variable.
+
+---
+### Importing Data
+---
+```{r}
+#set libraries
+library(pastecs) #For creating descriptive statistic summaries
+library(ggplot2) #For creating histograms with more detail than plot
+library(semTools) #For skewness and kurtosis
+library(dplyr)
+library(readr)
+library(devtools)
+library(psych)
+library(foreign)
+library(car) #levene test
+library(coin) #Wilcoxon test
+library(gmodels)
+
+# Load the data
+d1<-read.table("student-mat.csv",sep=";",header=TRUE)
+d2<-read.table("student-por.csv",sep=";",header=TRUE)
+StudentData<-merge(d1,d2,by=c("school","sex","age","address","famsize","Pstatus","Medu","Fedu","Mjob","Fjob","reason","nursery","internet"))
+
+#data manipulation needed
+StudentData$studytime.x <- as.factor(StudentData$studytime.x)
+StudentData$studytime.x <- as.factor(StudentData$failures.x)
+
+mathNoNull<- subset(StudentData, G3.x >0)
+mathNoNull$failures.x <- factor(mathNoNull$failures.x)
+
+#Functions created 
+getmode <- function(v)
+  {
+    uniqv <- unique(v)
+    uniqv[which.max(tabulate(match(v,uniqv)))]
+  }
+```
+
+# 1. Introduction
+#### 1.1 Background
+Within the Portuguese Education system, after 9 years of schooling (primary school), students enter Secondary School, where there are 3 types of programmes a higher-education orientated programme, a work-oriented (technological secondary programmes) and artistic-oriented prrammes.
+All General and Technological programmes share several modules, but within this data set it is only Portuguese that is shared, for the General programmes, Mathematics isn't a required subject for a number of the general programmes.
+
+For Secondary School in Portugal there are 4 core components (Portuguese, Foreign Language, Philosophy and Physical Education) all other subjects will fall into the specific subject areas or the Moral and Religious Education portion of studies [EURYDICE, Teaching and Learning in General Upper Secondary Education, Jan 2019]
+
+Grading scale in portugal is 0-20, with 0 as the worst and 20 the best. The pass mark is 9.5. 
+People will chose their units to complete, unlike in the Irish system, there is the ability to leave a module or drop out. Ever taken unit that is required for your higher level degree is calculated into your GPA, therefore, it makes sense that if a student doesn't need a module for them to pass and they may get below a 9.5 grade, they will not sit the final exam.
+
+I will be focusing on 5 studies to attempt to understand factors that may influence a final grade for a student, within this I will look at the Maths and Portuguese Data seperately first, and then analyse my 
+#### 5 Hypotheses 
+1.  The correlation between Final grades Math and Portuguese.
+2.  School support has an impact on grades throughout the year. 
+3.  There is a negative affect by Past Failures on  student grade.
+4.  
+
+
+##### Critical Analysis: Things to note
+The Schools are very dispropriantly represented in this this case, therefore the values will remain in, but it is difficult to conduct any analysis on whether one school is superior than the other, as there is no information to support thinking that one school may be larger than the other, or this is just the amount of people who offered to volunteer for this study.
+
+# Calculations
+### Analysis on MathGrade Final (G3.x)
+Initially I will investigate all of the Mathamatics data, to determine whether there is any level of data cleaning to be done to the maths data.
+```{r}
+#to get an initial feel for the data
+pastecs::stat.desc(StudentData, basic= F)
+
+getmode(StudentData$G3.x )
+
+#Measures of Dispersion
+#Range
+  range(StudentData$G3.x)
+#Quantiles
+  quantile(StudentData$G3.x)
+#Interquartile Range
+  IQR(StudentData$G3.x)
+
+#skewness and kurtosis
+G3skew <- semTools::skew(StudentData$G3.x)
+G3kurt <- semTools::kurtosis(StudentData$G3.x)
+
+#get stadnardardised score
+G3skew[1]/G3skew[2]
+G3kurt[1]/G3kurt[2]
+```
+Not normally distributed - due to standardized skew does not fall between +/- 2, it is -7.95 which means it is heavily negatively skewed.
+Standardized Kurtosis does not approach normality (+/-2) as it is 13.9035.
+Although their is normal distribution characteristics from calculations such as  as mode, mean and median, the levels of skewness and kurtosis, make it unreasonable to consider these Null values.
+
+```{r}
+#Visualisation
+ggplot(StudentData, aes(StudentData$G3.x)) +
+  labs(x = 'Maths Grade')+
+  geom_histogram(binwidth = 1, colour='black', aes(y= ..density.., fill=..count..))+
+  scale_fill_gradient("Count")+
+  stat_function(fun=dnorm, colour = 'red', args=list(mean=mean(StudentData$G3.x, na.rm=TRUE), sd=sd(StudentData$G3.x, na.rm=TRUE)))
+
+
+#QQplots
+qqnorm(StudentData$G3.x)
+qqline(StudentData$G3.x, col=2)
+
+
+```
+#### Visualisations show us
+Large number of outliers, which explains the high standard skew score and kurtosis.
+There also appears to be no students within the 1-3 grades, therefore these outliers are more likely explained by people not showing up to the exam for whatever reason.
+
+```{r}
+#Reviewing outliers
+outliersMath <- StudentData %>% 
+  dplyr::filter(scale(StudentData$G3.x) >3.29 | scale(StudentData$G3.x) < -3.29)
+
+#count them using dplyr summarize
+outliersMath %>%
+dplyr::summarize(count=n())
+
+StudentData %>%
+  filter(StudentData$G3.x < (mean(G3.x)- (2*sd(G3.x))) & G1.x >mean(G1.x))
+
+StudentData %>%
+  filter(StudentData$G3.x < mean(G3.x) & G2.x >mean(G2.x))
+
+
+
+```
+
+##### Explainations for the Zero's
+Within the data set, there is no explanation as to why someone may have received a 0, I have decided to conduct further investigation on these 0 values. Within the Portuguese Education system, even though Maths is a core module students have the option to drop the module.
+
+It is likely that students may have missed the exam due to illness, failed, or dropped the class - due to not being able to determine the cause from this data, I will remove it from future analysis, except for my analysis that specifically focuses on the failed students data, so see if there is any correlation to factors in this data.
+
+##### Reviewing students where their initial maths score is above the mean, while their final maths score is 2 standard deviations below the mean:
+2 students from GP fit  into this category.
+For both students who fit into this category there are no G2.x scores or G3.x scores, this likely means that these students dropped this course, as they completed the Portuguese exam we know they continued with Education. Although Maths is a core subject on the ciruculum you are allowed to drop it in Portugal. 
+
+##### Students who do worse on average in the final than on the second test
+Reviewing students who were above the mean in the second test, but below the mean in the final test.
+Some of this may be due to absenses as 5 of the 10 students with lower grades have absences on their record, although there is no student who falls out of one standard deviation from the mean, 2 students drop 20% of a grade from test 2, while the remaining 8 dropped by 10% or 1 point.
+
+## Removing data for Zero values on final test score; Maths
+### Analysising this data for normality.
+```{r}
+#create subset where NULL values in grade 3 of Maths are gone.
+mathNoNull<- subset(StudentData, G3.x >0)
+
+summary(mathNoNull)
+
+#Normality testing
+pastecs::stat.desc(mathNoNull$G3.x, basic = F)
+pastecs::stat.desc(mathNoNull$G2.x, basic = F)
+pastecs::stat.desc(mathNoNull$G1.x, basic = F)
+
+getmode(mathNoNull$G3.x )
+
+#Measures of Dispersion
+#Range
+  range(mathNoNull$G3.x)
+#Quantiles
+  quantile(mathNoNull$G3.x)
+#Interquartile Range
+  IQR(mathNoNull$G3.x)
+
+
+#skewness and kurtosis
+G3skew <- semTools::skew(mathNoNull$G3.x)
+G3kurt <- semTools::kurtosis(mathNoNull$G3.x)
+
+#get stadnardardised score
+G3skew[1]/G3skew[2]
+G3kurt[1]/G3kurt[2]
+
+#Confidence interval
+error <- qnorm(0.974)*sd(mathNoNull$G3.x)/sqrt(nrow(mathNoNull))
+error
+
+#Can be argued that the variances are homogeneous if the p-value > 0.05
+
+```
+342 students remain when 0 values for Mathematics are removed. Therefore, 40 students are removed. These will be investigated in a seperate chunk, to investigate whether there are similar characteristics amoung those that chose not to take the test/fail outright.
+
+```{r}
+#Visualise
+ggplot(mathNoNull, aes(mathNoNull$G3.x)) +
+  labs(x = 'Maths Grade')+
+  geom_histogram(binwidth = 1, colour='black', aes(y= ..density.., fill=..count..))+
+  scale_fill_gradient("Count")+
+  stat_function(fun=dnorm, colour = 'red', args=list(mean=mean(StudentData$G3.x, na.rm=TRUE), sd=sd(StudentData$G3.x, na.rm=TRUE)))+
+  stat_function(fun=dnorm, colour = 'black', args=list(mean=mean(mathNoNull$G3.x, na.rm=TRUE), sd=sd(mathNoNull$G3.x, na.rm=TRUE)))
+```
+#### Visualisation
+On the Histogram there are 2 mean curves, the red is the mean curve when NULL values were a part of the data set, which you can see is lep
+Perfectly normally distributed, mean, mode and median are all very similar.
+Skewness and Kurtosis both fall within the bonds of approaching normality at +/-2.
+This data will be used within further tests due to it's normality, the reasons for 0's remaining unknown, and students of less than 9.5 being of more interest than anyone getting 0's, as these students decided to complete Maths, but failed. 
+From this data, it is is concerning that with a 9.5 pass rate, the majority of students fall just above this at a mode of 10.
+
+## Analysing Portuguese Data where Final Math exam had grade greated than 0.
+```{r}
+pastecs::stat.desc(mathNoNull$G3.y, basic = F)
+
+getmode(mathNoNull$G3.y )
+
+#Measures of Dispersion
+#Range
+  range(mathNoNull$G3.y)
+#Quantiles
+  quantile(mathNoNull$G3.y)
+#Interquartile Range
+  IQR(mathNoNull$G3.y)
+
+
+#skewness and kurtosis
+G3skew <- semTools::skew(mathNoNull$G3.y)
+G3kurt <- semTools::kurtosis(mathNoNull$G3.y)
+
+#get stadnardardised score
+G3skew[1]/G3skew[2]
+G3kurt[1]/G3kurt[2]
+
+
+#visualisation
+ggplot(mathNoNull, aes(mathNoNull$G3.y)) +
+  labs(x = 'Portuguese Grade')+
+  geom_histogram(binwidth = 2, colour='black', aes(y= ..density.., fill=..count..))+
+  scale_fill_gradient("Count")+
+  stat_function(fun=dnorm, colour = 'red', args=list(mean=mean(StudentData$G3.y, na.rm=TRUE), sd=sd(StudentData$G3.y, na.rm=TRUE)))+
+ stat_function(fun=dnorm, colour = 'black', args=list(mean=mean(mathNoNull$G3.y, na.rm=TRUE), sd=sd(mathNoNull$G3.y, na.rm=TRUE)))
+
+#QQplots
+qqnorm(mathNoNull$G3.y)
+qqline(mathNoNull$G3.y, col=2)
+```
+Normally distributed about the mean with 
+Mean = 12.7055, Median = 13 and mode = 13.
+A Standard deviation of 2.833 and variation of 8.027
+
+Skew level is (-6.354) which means the data skews in the negative direction, acceptable skewness falls between +/- 2.
+Kurtosis level is (12.049) standardised kurtosis is considered to fall between +/- 2. 
+
+Therefore this data cannot be considered normal, but as Portuguese is 1 of the 4 core modules that has to be taken by all students in secondary school, the NULL's will remain in the analysis where there are values in for Maths, meaning the student had continued on in Education, but it cannot be ruled out that the students were unwell or have circumstances for missing this exam.
+
+
+I have included the mean distribution line for when the 0's were and weren't in place, this shows that the data has barely changed, therefore I am deleting analysis of the Portuguese with the Math 0's included, as it is just taking up space.
+
+```{r}
+#viewing outliers
+outliers <- mathNoNull %>% 
+  dplyr::filter(scale(mathNoNull$G3.y) >3.29 | scale(mathNoNull$G3.y) < -3.29)
+#count them using dplyr summarize
+outliers %>%
+dplyr::summarize(count=n())
+
+outliers
+
+
+#students more than 2 standard deviations below the mean on the final test
+std.below <- mathNoNull %>%
+  filter(mathNoNull$G3.y < (mean(G3.y)- (2*sd(G3.y))))
+count(std.below)
+
+std.below
+
+```
+#### Reviewing outliers
+Reviewing these outliers brings an interesting point to the data, although 3 of these students achieved a 0 in the final assessment, they received grades within 2 standard deviations of the mean in the previous assessments, but as the pass rate is 9.5 in the Portuguese secondary school, these students may have dropped out over not wanting to fail and spend time preparing more.
+
+However, 1 student was within 1 standard deviation from the mean for the first and second test, with 0 absenses in Portuguese, health at "very good". Family relationships are good, and has hopes to complete higher level education. Spends 2 hrs a week studying. Received an above average score in the final maths test (received 12, average 10.39), has internet, went to nursery, parents together is 16 yeras old, from an urban area within an hour travel time to school and is Male.
+
+Potential Contributing factors ;  5, alcohol consumption is at a high level for both Weekly and weekend, as well as going out levels being at a high. Does not have any activities or pay for supplimentary classes or have school support. Has previously failed 1 class.
+
+This may be an error in entry of data as this score does not make sense for this student, if there was a lower score in the final maths  test taken around the same time then there is the potential that there was an instance affecting the grade at that time, or a zero. but a 1 makes very little sense for this student.
+
+Another set of students of interest is the students who score below 2 standard devations from the mean, there are 9 students who fit this, the 4 above and 5 more. As the mean is so close to the fail rate all of these students failed.
+
+# Hypotheses
+## Hypothesis 1 : Arthimatetic and Verbal reasoning have an impact on eachother.
+### NULL Hypothesis - there is no correlation between Maths Final grade and Portuguese final grade.
+
+Statistical test used : Pearson Correlation - due to the data being a continuous scale variable, which  was normally distributed.
+Visualisation used: A scatter plot, with facets used to show the different schools, as it was the clearest form of representation.
+```{r}
+ggplot(mathNoNull, aes(mathNoNull$G3.x, mathNoNull$G3.y))+
+  geom_jitter(alpha = 0.6)+
+  labs(x= "Final Maths Grade", y= "Final Portuguese Grade")+
+  geom_smooth(method = "lm", se = F)
+
+ggplot(mathNoNull, aes(mathNoNull$G3.x, mathNoNull$G3.y))+
+  geom_jitter(alpha = 0.6)+
+  labs(x= "Final Maths Grade", y= "Final Portuguese Grade")+
+  facet_grid(. ~mathNoNull$school) +
+  geom_smooth(method = "lm", se = F)
+
+#averages per school
+aggregate(mathNoNull['G3.x'],mathNoNull['school'],mean);
+aggregate(mathNoNull['G3.y'],mathNoNull['school'],mean);
+
+aggregate(mathNoNull['G3.x'],mathNoNull['school'],sd);
+aggregate(mathNoNull['G3.y'],mathNoNull['school'],sd);
+
+```
+As the mean of the Portuguese grades was higher, I decided to correlate the effect of mathematics grade onto Portuguese, as we can see from the graph, the correlation is strong and positive, at 0.5576 according to the Pearson Test. 
+I also distinguished between school to review whether there was merit in analying the difference between Schools, GP has a much stronger correlation than MS, but this is likely due to the data from this school being 308 for GP, compared to 35 from MS. Their is a distincy difference between the GP and the MS schools: 
+For Math, GP for (M =11.653, SD= 3.292), MS for (M =10.829, SD = 3.139).
+For Portuguese, GP for (M =12.841, SD= 2.544), MS for (M =11.514, SD = 4.546).
+Which may be explained by the small portions we have for MS and the cleaning of the Data to remove NULL  values for Maths.
+
+
+#### Statistical testing
+```{r}
+#as data is normally distributed I will use Pearsons
+stats::cor.test(mathNoNull$G3.x,mathNoNull$G3.y, method= 'pearson')
+
+variance <- (cor(mathNoNull$G3.x, mathNoNull$G3.y, method = 'pearson' ))*(cor(mathNoNull$G3.x, mathNoNull$G3.y, method = 'pearson' ))
+variance
+
+```
+### Statistical Results
+The relationship between final semester Math Grade(G3.x from the StudentData set) and final semester Portuguese Grade(G3.y from the StudentData set) was investigated using a Pearson correlation.  A strong positive correlation was found (r = 0.5576, n=343, p<.001).
+With a Coefficient of Determination of (r^2= 0.3109) There is 31.09% of their variation in common.
+
+Therefore, the Null hypothesis is rejected and results are considered statistically significant
+
+
+
+
+## Hypthosis 2: School support has a positive impact on grades throughout the year.
+### NULL Hypothesis ; school support has no impact on a students performance in a subject
+Difference: using categorical variable that has two values.
+Statistical test used : T-test, first analysing homogenity with Levene test, as there were two independent groups with the Maths result being continuous normally distributed data. 
+Visualisation used: Boxplots to quickly and easily compare the means of the two student groups for each of  the maths exams.
+
+
+
+School support and the proof that it is having an effect on student grades is a major reason for funding within the Education Departments in many countries, identifying the characteristics which affect a students final grade and progression thorughout school early on is of interest to every school department, therefore I have decided to review the students who receive school support in order to try find characteristics and evidence that it does in fact work.
+```{r}
+
+describeBy(mathNoNull$G3.x, group= mathNoNull$schoolsup.x)
+car:: leveneTest(mathNoNull$G3.x ~ mathNoNull$schoolsup.x)
+t.test(mathNoNull$G3.x ~ mathNoNull$schoolsup.x, var.equal = FALSE)
+wilcox.test(mathNoNull$G3.x ~ mathNoNull$schoolsup.x)
+
+
+
+CohenD<- (5.448*5.448)/((5.448*5.448)+ 80.341)
+CohenD
+eta <- (5.448*5.448)/((5.448*5.448)+ (293+50-2))
+eta
+
+  
+supportedStudents<- subset(StudentData, StudentData$schoolsup.x == 'yes')
+NNsupportedStudents<- subset(mathNoNull, mathNoNull$schoolsup.x == 'yes')
+
+nrow(supportedStudents)
+nrow(NNsupportedStudents)
+
+nosupport<- subset(StudentData, StudentData$schoolsup.x == 'no')
+NNnosupport<- subset(mathNoNull, mathNoNull$schoolsup.x == 'no')
+
+mean(nosupport$G3.x)> mean(supportedStudents$G3.x)
+
+mean(NNnosupport$G1.x)
+mean(NNnosupport$G2.x)
+mean(NNnosupport$G3.x)
+
+#used in the discussion
+incNN<-(mean(NNnosupport$G3.x)-mean(NNnosupport$G1.x))/mean(NNnosupport$G1.x)
+incNN
+
+mathNoNull %>%
+  filter(schoolsup.x== 'yes')
+
+mean(supportedStudents$G1.x)
+mean(supportedStudents$G2.x)
+mean(supportedStudents$G3.x)
+
+#used in the discussion
+inc<- (mean(supportedStudents$G3.x)-mean(supportedStudents$G1.x))/mean(supportedStudents$G1.x)
+inc
+
+
+boxplot(G3.x~StudentData$schoolsup.x, StudentData, xlab= 'Support in Maths', ylab= 'Maths Final Grade')
+boxplot(G2.x~StudentData$schoolsup.x, StudentData, xlab= 'Support in Maths', ylab= 'Maths Second Grade')
+boxplot(G1.x~StudentData$schoolsup.x, StudentData, xlab= 'Support in Maths', ylab= 'Maths First Grade')
+
+```
+
+### Statistical Results
+Levene's homogenity test was performed in order to estimate whether homogenity was achieved a significant result (Pr = 0.003045)
+An independent-samples t-test was conducted to compare Maths Grade scores for 'No Support' and 'Get Support' students. shows 
+No significant difference in the scores for Math grade was found (M=11.89078, SD= 3.29 for 'No Support' respondents, M= 9.680, SD=  2.53 for 'Get Support' students), (t(80.34)= 5.448, p = 0.001). 
+The eta squared statistic, which indicates moderate effect size. (0.08 )
+
+Therefore, the Null hypothesis is rejected and results are considered statistically significant
+
+
+Looking at the mean of the students in the first exam and second and 3rd exam, proving that progress is being made or that there is retention.
+#### Those who do receive school support
+##### Including the NULL values for test 3
+The mean of Maths for supported students was 9.06 for test 1, 9.53 for test 2 and 9.49 for test 3. All of these are below the failure rate, for those including 0's in the final grade
+##### Excluding the NULL values for test 3
+The mean of Maths for supported students was 9.1 for test 1, 9.54 for test 2 and 9.68 for test 3. All of these are below the failure rate, for those who didn't get NULL in the final grade - this shows that the average increased overall between those that get support.
+
+#### Those who do not receive school support
+##### Including the NULL values for test 3
+The mean of Maths for supported students was 11.14 for test 1, 10.89 for test 2 and 10.525 for test 3. All of these are below the failure rate, for those including 0's in the final grade
+##### Excluding the NULL values for test 3
+The mean of Maths for supported students was 11.61 for test 1, 11.706 for test 2 and 11.89 for test 3. All of these are below the failure rate, for those who didn't get NULL in the final grade - this shows that the average increased overall between those that get support.
+
+
+
+## Hypthosis 3 -Past Failures and how that affects student grade.
+### NULL Hypthothesis : There is no correlation between past failures and future grades in academia.
+Statistical test used : ANOVA one sided test, with TukeyHSD as posthoc analysis; due  to there being 4 different categories for failing that were being assessed and the data being continuous and normally distributed
+Visualisation used: Boxplots to quickly and easily compare the means of each of the groups, showing how previously failure impacts the mean, IQR and overall range of the students.
+
+A one-way between-groups analysis of variance was conducted to explore the impact of past failures on achieved grades, as measured by the Student Performance data set. Participants provided the count of times they had previously failed the exam they were taking, as you are allowed take this exam multiple times in the Portuguese system, I was interested to find out if this was a study tactic, or due to genuine failure. 
+```{r}
+
+#Bartletts test
+stats:: bartlett.test(mathNoNull$G3.x, mathNoNull$failures.x)
+#ANOVA
+failures.aov <-aov(mathNoNull$G3.x ~ mathNoNull$failures.x, data= mathNoNull) 
+summary(failures.aov)
+#TukeyHSD
+TukeyHSD(failures.aov, trt= 'group')
+
+library(agricolae)
+(HSD.test(failures.aov, 'mathNoNull$failures.x'))
+
+
+(ANOVA = 366/ 3319)
+
+boxplot(G3.x~mathNoNull$failures.x, mathNoNull, xlab= 'Failures', ylab= 'Maths Final Grade')
+```
+### Statistical Results
+
+There was a statistically significant difference at the p < .001 level in Math scores for the 4 failure category groups: F(3, 339)=12.45, p<0.001. 
+The actual difference in mean scores between groups was large. The effect size, calculated using eta squared was 0.11.
+Post-hoc comparisons using the Tukey HSD test indicated that the mean score for Failures 0 (M=11.959, SD=3.209) was statistically different to Failures 1 (M=9.607, SD=2.806), Failures 2 (M=7.581, SD=2.225), Failures 3 (M=8.545, SD=1.695),
+All groups were statistically different, with the lowest differentiation being between failing 3 times versus 2 times.
+
+## Hypothesis 4: Previous academic performance throughout the year has a direct impact on final grade.
+### NULL Hypthothesis : Grades within module in the year have no correlation to final grade.
+Statistical test used : ANOVA one sided test, with TukeyHSD as posthoc analysis; due  to there being 3 different maths exams that were being assessed.
+Visualisation used: Boxplots to quickly and easily compare the means of each of the groups barely change.
+```{r}
+#How previous math grades match up
+test <- c(rep("G1.x", 343),rep("G2.x", 343),rep("G3.x", 343))
+grade <- c(mathNoNull$G1.x, mathNoNull$G2.x, mathNoNull$G3.x)
+gradedf<- data.frame(test, grade)
+plot(grade ~test, data = gradedf)
+
+
+
+math.aov <- userfriendlyscience::oneway(gradedf$test, y = gradedf$grade, posthoc = 'Tukey') 
+#printout a summary of the anova 
+math.aov
+
+(ETA <-(8.85/ 10.85))
+```
+
+### Statistical Results
+There was a statistically no significant difference at the p < .433 level in Math scores for the 3 tests: F(2, 1026)= 0.84, p= 0.433. 
+The difference in mean scores between groups was minor. The effect size was extremely large, calculated using eta squared was 0.816.
+There is no statistically significant difference to be seen between these grades and therefore it can be assumed that past grades are a strong indication of future grades.
+
+
+## Hypothesis 5 : Doing activities/ having a school activitities balance has an impact on your education.
+### NUll Hypothesis : there is no effect of extra curricular activity on grades
+Statistical test used : T-test as the two variables were independent. with a normally distributed Maths variable, then the Chi-square test on the two categorical variables in the second test which were both independent categorical variables
+Visualisation used: Boxplots to quickly and easily compare the means of each of the groups, showing how previously failure impacts the mean, IQR and overall range of the students.
+```{r}
+activity <- subset(mathNoNull, activities.x == 'yes')
+noactivity <- subset(mathNoNull, activities.x == 'no')
+mean(activity$G3.x) >mean(noactivity$G3.x)
+median(activity$G3.x)> median(noactivity$G3.x)
+
+ggplot(mathNoNull, aes(mathNoNull$activities.x, y= mathNoNull$G3.x))+
+  geom_boxplot() +
+  labs(x= 'Activites', y= 'Maths Grade')
+
+
+describeBy(mathNoNull$G3.x, group= mathNoNull$activities.x)
+car:: leveneTest(mathNoNull$G3.x ~ mathNoNull$activities.x)
+ttest<- t.test(mathNoNull$G3.x ~ mathNoNull$activities.x, var.equal = TRUE)
+wilcox.test(mathNoNull$G3.x ~ mathNoNull$activities.x)
+
+eta<- (-1.024886*-1.024886)/((-1.024886*-1.024886)+ 341)
+eta
+```
+### Statistical Results
+Levene's homogenity test was performed in order to estimate whether homogenity was achieved, (Pr = 0.8495) 
+An independent-samples t-test was conducted to compare Maths Grade scores for 'No activity' and 'Take part in activities' respondents. 
+No statisitcal significant difference in the scores for Math grade was found for 'No activity' respondents(M=11.377, SD= 3.35), for 'Take part in activities' respondents (M= 11.740, SD=  3.22), (t(343)= -1.0227, p = 0.3072). 
+The eta square statistic also indicated a very small effect size (0.00307).
+
+
+NULL hypothesis is proved, which means this study is invalid or that it is about specific extra curricular activities and there is more investigate to be done on what activities these pupils are doing, therefore I will review if there is an effect on study time by activities
+
+#### Reviewing the impact of activities on study time
+
+```{r}
+#Chi-Square test
+gmodels:: CrossTable(mathNoNull$studytime.x, mathNoNull$activities.x, fisher = TRUE, chisq=TRUE, expected = TRUE, sresid = TRUE, format = "SPSS")
+
+#More simplistic way to do your chi-square
+#Create your contingency table
+mytable<-xtabs(~mathNoNull$studytime.x+ mathNoNull$activities.x, data=mathNoNull)
+
+ctest<-chisq.test(mytable, correct=TRUE)#chi square test
+#correct=TRUE to get Yates correction needed for 2x2 table
+
+
+#Cramers
+sqrt((0.66819^2)/(343*3))
+
+
+```
+#### Statistical Results
+A Chi-Square test for independence indicated a small statistical association between students partaking in activites and time spent studying mathamatics, χ2(2,n=342)=0.668,p=.88, phi= 0.386
+
+Due to this lack of concrete statistical evidence that extra curricular activities have either a positive or negative affect on study time, it is quite surprising that students who do not do extra curricular actitivies  are not spending more time studying than those who do them.
+
+
+
+## Discussion 
+Within this study, I reduced the overall merged dataset provided down by 39 students, by eliminating the NULL values for Maths final grade. This has allowed an analysis of this maths data as a normal dta set withoout skewness.
+This study has reveiled that although there are some correlations which may have been known, such as a students ability to do well very well at one subject very often does correlate with being an overall good student, although this cannot be confirmed with just two subjects.
+
+An area I focused on heavily within the study was past failures, as the data suggests there is a strong negative correlation between past failures of a subject and receiving low grades in it going  forward, although this wasn't very surprising.
+The lack of students who receive school assistance in Maths and still fell below the maths pass grade was something of concern.Of the 51 students that received maths support from the school only 1 didn't complete the final exam/got a NULL. Although the mean for those getting no support is higher, this does not show the progress of students who do receive support.
+From Test 1 to test 3 - for supported students there was a 4.76% increase in mean grade for the group.
+Compared to the 2.38% increase amongst students who did not receive school support.
+
+Within this study and would require further investigation is the extra curriculuar activities in which students take part in, although within the Portuguese education system in Secondary School Physical Activity is manadatory, it would be of interest to not just the school but also the health department to see what extra curricular activites students parttake in and if there is a correlation to those and better grades, as the studies referenced suggest.
+This proves this paper wrong for this incorrect, but a key component of out of school activities and competences which are required in the workplace cannot be simply measured in tests. Although Craft's paper does state that it is only a slight advantage in  terms of GPA and SAT scores for students who parttkae in activities, this is not what we see here, which is potentially down to 2 factors. Sample size and activites not being categorized. Physical Education is a manadory part of Seocondary School in Portugal, which may be why some students do not participate in out of school activities yet still benefit from these skills.  [Craft.SW, 2012]
+
+
+
+## References
+Employment by economic sector in Portugal 2018; H. Plecher, Jun 20, 2019 [H. Plecher, Jun 20, 2019]
+https://www.statista.com/statistics/372351/employment-by-economic-sector-in-portugal/
+
+[EURYDICE, Teaching and Learning in General Upper Secondary Education, Jan 2019]
+https://eacea.ec.europa.eu/national-policies/eurydice/content/teaching-and-learning-general-upper-secondary-education-45_en
+
+USING DATA MINING TO PREDICT SECONDARY SCHOOL STUDENT PERFORMANCE; Paulo Cortez and Alice Silva, Dep. Information Systems/Algoritmi R&D Centre, University of Minho, 2008 [Cortez and Silva, 2008]
+https://repositorium.sdum.uminho.pt/bitstream/1822/8024/1/student.pdf
+
+[Education Network, Portugal]
+https://educationnetwork.pt/the-grading-system-in-portugal/
+
+LESSONS FROM RESEARCH ON THE IMPACT OF DEIS (Delivering Equality of Opportunity in Schools) [Dept. of Education and Skills, Ireland Dec 2011]
+https://www.education.ie/en/Schools-Colleges/Services/DEIS-Delivering-Equality-of-Opportunity-in-Schools-/Lessons-from-Research-on-the-Impact-of-DEIS.pdf
+
+The Impact of Extracurricular Activities on Student Achievement at the High School Level, Steven Wesley Craft, University of Southern Mississippi, Spring 2012 [Craft.SW, 2012]
+https://pdfs.semanticscholar.org/579b/f6b56c3b9bc52a9765c1a6e31a5d88fba19b.pdf
+
+
+Positive Effects of Extra Curricular Activities on Students, Erin Massoni, College of DuPage, 4-1 2011 [Massoni.E, 2011]
+https://dc.cod.edu/cgi/viewcontent.cgi?article=1370&context=essai
+
+#### Bibliography
+https://educationnetwork.pt/the-grading-system-in-portugal/
+
+
+
+
+
+# Appendix
+
+## Failed grades need to be investigated to try to estimate why and if students drop out.
+```{r}
+#What happened to people had 0's more investigation needed.
+library(dplyr)
+failed <- (StudentData %>% filter( G3.x ==0 | G3.y == 0))
+
+str(failed)
+
+summary(failed)
+ggplot(failed, aes(x= G3.x)) +
+         geom_bar()
+
+#ratio per school
+ggplot(failed, aes(x= sex, fill= school))+
+  geom_bar()
+
+
+ ggplot(StudentData, aes(x= reason, fill = G3.x == 0))+
+  geom_bar()
+ 
+mean(StudentData$absences.x) < mean(failed$absences.x)
+
+```
+
+
+
