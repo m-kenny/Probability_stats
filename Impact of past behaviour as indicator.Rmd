@@ -1,0 +1,497 @@
+---
+title: "R Notebook for Probability and statistical Inference CA Part II_MK_D19123736"
+author: "D19123726_Molly Kenny_TU059"
+csl: apa.csl
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+Version of R: R version 3.6.1 (2019-07-05)
+---
+# Abstract
+Due to the keen interest in predicting whether a student will be successful or not, as it impacts the overall economy when students are successful.
+I have reviewed the correlation between, past failures and grades on the outcome of the final most important test, with respect to gender. It can be seen from the first analysis that Maths Grade and Portuguese grades are strongly correlated, therefore for the remaining tests, the focus will be on the maths grade, previous grades correlation, the affect of previous failures and the 
+Within the Portuguese Education system, students may opt not to take an examination nad sit it in a following year, but may have been registered for the class at the beginnining, therefore, for this analysis I have removed all of the Null values for the final maths test. 
+
+    
+```{r}
+#set libraries
+library(pastecs) 
+library(ggplot2) 
+library(semTools) #check if I actually need this.
+library(dplyr)
+library(readr)
+library(devtools)
+library(psych)
+
+#stat tests
+library(car) #levene test
+library(coin) #Wilcoxon test
+library(ppcor)#partial correlation
+
+#modelling LM/LR
+library(foreign) #To work with SPSS data : Don't actually think I need anymore
+library(gmodels)
+library(lmSupport)
+library(lm.beta)
+library(stargazer)
+```
+
+
+```{r}
+# Load the data
+StudentData <- read_csv('studentsrenamed.csv')
+
+#clear Nulls for mG3
+StudentData <- StudentData %>%
+                filter(mG3 > 0.1)
+
+#add sex column for extended model
+StudentData$Female <- ifelse(StudentData$sex == 'F', 1, 0)
+
+#change columns to factors               
+cols.to.factor <- sapply(StudentData,function(col)length(unique(col)) <log10(length(col)))
+StudentData[cols.to.factor] <- lapply(StudentData[ cols.to.factor] , factor)
+
+StudentData$Medu<- as.factor(StudentData$Medu)
+StudentData$Fedu<- as.factor(StudentData$Fedu)
+StudentData$famrel.m<- as.factor(StudentData$famrel.m)
+
+#Functions created 
+getmode <- function(v)
+  {
+    uniqv <- unique(v)
+    uniqv[which.max(tabulate(match(v,uniqv)))]
+  }
+
+```
+
+
+
+# Visual review of Maths and Portuguese
+There are such strong correlations between these, that there is no point in keeping both into this.
+```{r}
+ggplot(StudentData, aes(mG3, pG3))+
+  geom_point()
+
+cor.test(StudentData$mG3, StudentData$pG3)
+variance <- (cor(StudentData$mG3, StudentData$pG3, method = 'pearson' ))^2
+variance
+
+
+#View all maths and Portuguese grades.
+Maths <- dplyr::select(StudentData, mG1, mG2, mG3, pG1, pG2, pG3)
+
+sDMatrix<-cor(Maths)
+round(sDMatrix, 2)
+Hmisc::rcorr(as.matrix(Maths))
+
+p.mat <- ggcorrplot::cor_pmat(Maths)
+ggcorrplot::ggcorrplot(sDMatrix, title = "Correlation matrix for Portuguese and Maths grades")
+
+
+```
+### Statistical Results
+The relationship between final semester Math Grade(mG3 from the StudentData set) and final semester Portuguese Grade(G3.y from the StudentData set) was investigated using a Pearson correlation.  A strong positive correlation was found (r = 0.5576, n=341, p<.001).
+With a Coefficient of Determination of (r^2= 0.3109) There is 31.09% of their variation in common.
+
+
+# Summary of the variables used.
+Maths Final Grade
+```{r}
+## summary of variable used
+pastecs::stat.desc(StudentData, basic= F)
+
+getmode(StudentData$mG3 )
+
+#Measures of Dispersion
+#Range
+  range(StudentData$mG3)
+#Quantiles
+  quantile(StudentData$mG3)
+#Interquartile Range
+  IQR(StudentData$mG3)
+
+#skewness and kurtosis
+G3skew <- semTools::skew(StudentData$mG3)
+G3kurt <- semTools::kurtosis(StudentData$mG3)
+
+#get stadnardardised score
+G3skew[1]/G3skew[2]
+G3kurt[1]/G3kurt[2]
+
+#Visualisation
+ggplot(StudentData, aes(StudentData$mG3)) +
+  labs(x = 'Maths Grade')+
+  geom_histogram(binwidth = 1, colour='black', aes(y= ..density.., fill=..count..))+
+  scale_fill_gradient("Count")+
+  stat_function(fun=dnorm, colour = 'red', args=list(mean=mean(StudentData$mG3, na.rm=TRUE), sd=sd(StudentData$mG3, na.rm=TRUE)))
+
+
+#QQplots
+qqnorm(StudentData$mG3)
+qqline(StudentData$mG3, col=2)
+
+#Confidence interval
+error <- qnorm(0.974)*sd(StudentData$mG3)/sqrt(nrow(StudentData))
+error
+
+#scale(StudentData$mG3)
+
+# assess for normality histograms, boxplot, quantile plot
+#googness of fit test  - Shapiro-Wilks (small data set) - Kolmogorov-Smirnov Test
+#recognized heuristics - standardized skewness, kurtosis, % of standardized scores
+
+```
+Once the Nulls are removed it is normally distributed - due to standardized skew falls between +/- 2, it is 1.599.
+Standardized Kurtosis also approaches normality (+/-2) as it is -1.7335
+When the Nulls are kept in place, there is normal distribution characteristics from calculations such as  as mode, mean and median, the levels of skewness (-7.95) and kurtosis (13.9035) , make it unreasonable to consider these Null values.
+
+# Assess the correlation between variables and predictor.
+
+## Statistical results
+### Gender
+### School support
+### Past Failures
+
+Analysis on the school support, failures in math and gender, compared to eachother and with the outcome predictor Maths
+```{r}
+#Sex
+describeBy(StudentData$mG3,group= StudentData$Female)
+car:: leveneTest(StudentData$mG3 ~ StudentData$Female)
+t.test(StudentData$mG3 ~ StudentData$Female, var.equal = FALSE)
+
+
+#sex and failures
+ppcor::spcor.test(StudentData$mG3,StudentData$sex, StudentData$failures.m)
+car:: leveneTest(StudentData$failures.m ~ StudentData$sex)
+
+
+#failures
+#Bartletts test
+stats:: bartlett.test(StudentData$mG3, StudentData$failures.m)
+#ANOVA
+failures.aov <-aov(StudentData$mG3 ~ StudentData$failures.m) 
+summary(failures.aov)
+#TukeyHSD
+library(agricolae)
+(HSD.test(failures.aov, 'StudentData$failures.m'))
+(ANOVA = 366/ 3319)
+
+failures0 <- StudentData %>%
+            filter(failures.m== 0) %>%
+            summarise(mean = mean(mG3))
+            
+failures1 <- StudentData %>%
+            filter(failures.m== 1) %>%
+            summarise(mean = mean(mG3))
+failures2 <- StudentData %>%
+            filter(failures.m== 2) %>%
+            summarise(mean = mean(mG3))
+failures3 <- StudentData %>%
+            filter(failures.m== 3) %>%
+            summarise(mean = mean(mG3))
+
+failures0
+failures1
+failures2
+failures3
+
+
+#Analyse the 2 variables and the predictor
+ppcor::spcor.test(StudentData$mG3,StudentData$schoolsup.m,StudentData$failures.m)
+#Correlation between variables
+ppcor::spcor.test(StudentData$sex,StudentData$schoolsup.m,StudentData$failures.m)
+
+
+#school support
+car:: leveneTest(StudentData$mG3 ~ StudentData$schoolsup.m)
+t.test(StudentData$mG3 ~ StudentData$schoolsup.m, var.equal = FALSE)
+wilcox.test(StudentData$mG3 ~ StudentData$schoolsup.m)
+support <-  StudentData %>%
+            filter(schoolsup.m== 'no') %>%
+            summarise(mean = mean(mG3))
+CohenD<- (5.448*5.448)/((5.448*5.448)+ 80.341)
+CohenD
+eta <- (5.448*5.448)/((5.448*5.448)+ (293+50-2))
+eta
+library(userfriendlyscience)
+one.way <- oneway(StudentData$schoolsup.m, y = StudentData$mG3, posthoc = 'Tukey') 
+one.way
+
+
+```
+
+# Linear regression models 
+## Baseline Model: 
+### Outcome variable : Maths final Grade.
+### Predictive variables: School support 
+
+```{r}
+modellinearB <- lm(StudentData$mG3 ~ StudentData$schoolsup.m)
+stargazer(modellinearB, type = "text")
+#Tests on model fit and usefulnessness
+anova(modellinearB)
+summary(modellinearB)
+lm.beta(modellinearB)
+```
+
+### Regression model
+Regression equation:  11.8908 + (-2.2108 * school supp)
+
+# Linear regression models 
+## Dummy variable added Model: 
+### Outcome variable : Maths final Grade.
+### Predictive variables: School support 
+### Controlling for: Gender
+
+
+
+```{r}
+#Linear regression models - 2 predictors
+modellinear <- lm(StudentData$mG3 ~ StudentData$schoolsup.m+StudentData$Female)
+stargazer(modellinear, type = "text")
+
+#Tests on model fit and usefulnessness
+anova(modellinear)
+summary(modellinear)
+lm.beta(modellinear)
+```
+
+### Regression model
+Regression equation: 12.19147 + (-2.053 * school supp + (-0.64 * female)
+
+
+
+
+###  Check assumptions
+```{r}
+#Influential Outliers - Cook's distance
+cooksd<-sort(cooks.distance(modellinear))
+
+# plot Cook's distance
+plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  
+abline(h = 4*mean(cooksd, na.rm=T), col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red")  # add labels
+
+#find rows related to influential observations
+influential <- as.numeric(names(cooksd)[(cooksd > 4*mean(cooksd, na.rm=T))])
+#influential row numbers that illustrate findings
+stem(influential)
+head(StudentData[influential, ]) 
+head(StudentData[influential, ]$mG3) 
+head(StudentData[influential, ]$schoolsup.m) 
+
+
+#assess it's fit and usefullness 
+car::outlierTest(modellinear) # Bonferonni p-value for most extreme obs - Are there any cases where the outcome variable has an unusual variable for its predictor values?
+car:: leveragePlots(modellinear, main = "Model 1")
+
+#Assess homocedasticity 
+plot(modellinear,1)
+plot(modellinear, 3)
+
+#Create histogram and  density plot of the residuals
+plot(density(resid(modellinear))) 
+
+#Create a QQ plotqqPlot(model, main="QQ Plot") #qq plot for studentized resid 
+car::qqPlot(modellinear, main="QQ Plot - Model 1") #qq plot for studentized resid
+```
+
+
+# Linear regression models 
+## Extended Model: 
+### Outcome variable : Maths final Grade.
+### Predictive variables: School support, past failures
+### Controlling for: Gender
+
+```{r}
+#Grades with variable gender
+modellinear2 <- lm(StudentData$mG3 ~ StudentData$schoolsup.m+StudentData$failures.m+ StudentData$Female)
+stargazer(modellinear2, type = "text")
+
+anova(modellinear2)
+summary(modellinear2)
+lm.beta(modellinear2)
+
+
+cooksd2<-sort(cooks.distance(modellinear2))
+# plot Cook's distance
+plot(cooksd2, pch="*", cex=2, main="Influential Obs by Cooks distance")  
+abline(h = 4*mean(cooksd2, na.rm=T), col="red")  # add cutoff line
+text(x=1:length(cooksd2)+1, y=cooksd2, labels=ifelse(cooksd2>4*mean(cooksd2, na.rm=T),names(cooksd2),""), col="red")  # add labels
+
+#find rows related to influential observations
+influential2 <- as.numeric(names(cooksd2)[(cooksd2 > 4*mean(cooksd2, na.rm=T))])
+#influential row numbers
+stem(influential)
+head(StudentData[influential, ]) 
+
+
+
+```
+
+
+
+#### To improve this model, I have added an interactive term - to the model in order to ensure that there is a realistic view of performance.
+```{r}
+#Compare the two models
+stargazer(modellinearB, modellinear, modellinear2, type="text")
+
+
+#graphically
+#statistically
+car::qqPlot(modellinear2, main="Model 1")+ qqPlot(modellinear, main = "Model 2")
+
+
+# Outlier test
+car::outlierTest(modellinear2)
+
+#leverage points
+car::leveragePlots(modellinear2) 
+
+#denisity
+plot(density(resid(modellinear2))) 
+
+vifmodel<-car::vif(modellinear2)#You can ignore the warning messages, GVIF^(1/(2*Df)) is the value of interest
+vifmodel
+#Assess homocedasticity 
+plot(modellinear2,1)
+plot(modellinear2, 3)
+# XXX need more in
+```
+
+
+
+## Testing of the model
+
+```{r}
+#Test the model
+library(dplyr)
+Test <- StudentData %>%
+        dplyr:: select(failures.m, Female, schoolsup.m,mG3) 
+     
+Test
+Test$schoolsup.m <- ifelse(Test$schoolsup.m == 'yes', 1, 0)
+Test$Female <- ifelse(Test$schoolsup.m == '1', 1, 0)
+Test$schoolsup.m <- as.numeric(Test$schoolsup.m)
+
+
+
+Test$reg <-  as.numeric(Test$Female)
+nrow(Test)
+for(i in 343){
+Test$reg[i] <- 12.5325 + (-1.8207*Test$schoolsup.m[i]) + (-1.4629 * Test$failures.m[i]) + (-0.7424 * Test$Female[i])
+}
+Test
+
+Test$reg <- 12.5325 + (-1.8207*Test$schoolsup.m) + (-1.4629 * Test$failures.m) + (-0.7424 * Test$Female)
+
+plot(Test$mG3, main = "maths grade")
+plot(Test$reg, main = "regression equation")
+
+
+```
+
+# Logistic Regression
+
+
+# Logistic regression model
+## baseline regression model with 3 predictors 
+Trying to predict how well a student will do in school, based on their mothers education.
+
+```{r}
+# Logistic regression
+unique(StudentData$Mjob)
+unique(StudentData$Fjob)
+summary(StudentData$Mjob)
+
+StudentData$Mjob <- as.factor(StudentData$Mjob)
+summary(StudentData$famsize)
+summary(StudentData$Medu)
+summary(StudentData$address)
+
+```
+# Logistic regression models 
+## Baseline Model: 
+### Outcome variable : famsize.
+### Predictive variables: address 
+
+# Hypthothesis : People who live in Rural areas have more children than those in urban areas.
+Review the probability of this in relation to the Mothers career.
+```{r}
+#Baseline model for predictors
+logmodelB <- glm(famsize ~ address, data = StudentData, na.action = na.exclude, family = binomial(link=logit))
+
+stargazer(logmodelB, type="text")
+summary(logmodelB)
+
+
+#Output the sensitivity, specificity, and ROC plot
+Epi::ROC(form= famsize ~ address, data= StudentData, plot="ROC", main = "Families are larger in Rural areas")
+
+#Exponentiate the co-efficients
+exp(coefficients(logmodelB))
+
+#Probability of answering GT3 when Urban
+arm::invlogit(coef(logmodelB)[1]+ coef(logmodelB)[2]*0)#YES this is the same as just having the 1st co-efficient
+#Probability of answering GT3 when rural
+arm::invlogit(coef(logmodelB)[1]+ coef(logmodelB)[2]*1)
+
+
+#Chi-square plus significance
+lmtest::lrtest(logmodelB)
+
+#Pseudo Rsquared plus Chi-square of the model
+rcompanion::nagelkerke(logmodelB,restrictNobs=TRUE)
+
+
+
+## odds ratios and 95% CI
+cbind(Estimate=round(coef(logmodelB),4),
+OR=round(exp(coef(logmodelB)),4))
+
+```
+
+# Logistic regression models 
+## Extended Model: 
+### Outcome variable : famsize
+### Predictive variables: address and Mothers Job 
+
+
+```{r}
+logmodel1 <- glm(famsize ~ address+ Mjob, data = StudentData, na.action = na.exclude, family = binomial(link=logit))
+
+stargazer(logmodel1, type="text")
+summary(logmodel1)
+
+
+#Chi-square plus significance
+lmtest::lrtest(logmodel1)
+
+#Pseudo Rsquared plus Chi-square of the model
+rcompanion::nagelkerke(logmodel1,restrictNobs=TRUE)
+
+#Exponentiate the co-efficients
+exp(coefficients(logmodel1))
+## odds ratios and 95% CI 
+cbind(Estimate=round(coef(logmodel1),4),
+OR=round(exp(coef(logmodel1)),4))
+
+#Probability of answering yes when male 
+arm::invlogit(coef(logmodel1)[1]+ coef(logmodel1)[2]*0)#YES this is the same as just having the 1st co-efficient
+#Probability of answering yes when female 
+arm::invlogit(coef(logmodel1)[1]+ coef(logmodel1)[2]*1)
+
+Epi::ROC(form= famsize~address + Fedu, data= StudentData, plot="ROC")
+Epi::ROC(form= famsize~address + Mjob, data= StudentData, plot="ROC")
+#Output the sensitivity, specificity, and ROC plot
+Epi::ROC(form=paid.m ~ Female+ studytime.m, data= StudentData, plot="ROC")
+
+vifmodel<-car::vif(logmodel1)#You can ignore the warning messages, GVIF^(1/(2*Df)) is the value of interest
+vifmodel
+#Tolerance
+1/vifmodel                      
+
+```
+
